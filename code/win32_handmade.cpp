@@ -1,4 +1,4 @@
-#include <windows.h>
+#include <Windows.h>
 #include <stdio.h>
 
 #define internal_fn static 
@@ -8,13 +8,25 @@
 // global variable for now
 global_variable bool running;
 
-internal_fn void resize_dib_section()
+internal_fn void w32_resize_dib_section(int width, int height)
 {
-
+    CreateDIBSection()
 }
 
+internal_fn void w32_update_window(HDC device_context, int x, int y, int width, int height)
+{
+    StretchDIBits(device_context, 
+        x, y, width, height, 
+        x, y, width, height, 
+        ZZ, 
+        ZZ, 
+        ZZ, 
+        SRCCOPY);
+}
+
+
 // Window proc call back
-LRESULT CALLBACK main_window_callback(
+LRESULT CALLBACK w32_main_window_callback(
     HWND window,
     UINT message,
     WPARAM w_param,
@@ -26,7 +38,11 @@ LRESULT CALLBACK main_window_callback(
     {
         case WM_SIZE: 
         {
-
+            RECT client_rect;
+            GetClientRect(window, &client_rect);
+            int width = client_rect.right - client_rect.left;
+            int height = client_rect.bottom - client_rect.top;
+            w32_resize_dib_section(width, height);
         } break;
 
         case WM_DESTROY: 
@@ -55,8 +71,9 @@ LRESULT CALLBACK main_window_callback(
             int y = paint.rcPaint.top;
             int width = paint.rcPaint.right - paint.rcPaint.left;
             int height = paint.rcPaint.bottom - paint.rcPaint.top;
+
+            w32_update_window(device_context, x, y, width, height);
             
-            PatBlt(device_context, x, y, width, height, WHITENESS);
             EndPaint(window, &paint);
         } break;
 
@@ -79,7 +96,7 @@ int CALLBACK WinMain(
     WNDCLASS window_class = {};
 
     window_class.style = CS_OWNDC|CS_HREDRAW|CS_VREDRAW;
-    window_class.lpfnWndProc = main_window_callback;
+    window_class.lpfnWndProc = w32_main_window_callback;
     window_class.hInstance = instance;
     // window_class.hIcon = ;
     window_class.lpszClassName = "hmh_window_class";
