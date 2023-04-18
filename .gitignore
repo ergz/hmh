@@ -32,7 +32,6 @@
 
 # Sublime Text specific files
 *.sublime-workspace
-*.sublime-project
 
 # Visual Studio specific files
 *.aps

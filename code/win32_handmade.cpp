@@ -20,7 +20,7 @@ internal_fn void w32_resize_dib_section(int width, int height)
     {
         DeleteObject(bitmap_handle);
     }
-    else 
+    if (!bitmap_handle) 
     {
         bitmap_device_context = CreateCompatibleDC(0);
     }
