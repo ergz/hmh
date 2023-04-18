@@ -8,9 +8,35 @@
 // global variable for now
 global_variable bool running;
 
+global_variable BITMAPINFO bitmap_info;
+global_variable void *bitmap_memory;
+global_variable HBITMAP bitmap_handle;
+global_variable HDC bitmap_device_context;
+
 internal_fn void w32_resize_dib_section(int width, int height)
 {
-    CreateDIBSection()
+
+    if (bitmap_handle) 
+    {
+        DeleteObject(bitmap_handle);
+    }
+    else 
+    {
+        bitmap_device_context = CreateCompatibleDC(0);
+    }
+
+    bitmap_info.bmiHeader.biSize = sizeof(bitmap_info.bmiHeader);
+    bitmap_info.bmiHeader.biWidth = width;
+    bitmap_info.bmiHeader.biHeight = height;
+    bitmap_info.bmiHeader.biPlanes = 1;
+    bitmap_info.bmiHeader.biBitCount = 32;
+    bitmap_info.bmiHeader.biCompression = BI_RGB;
+
+    bitmap_handle = CreateDIBSection(
+        bitmap_device_context, 
+        &bitmap_info, 
+        DIB_RGB_COLORS, &bitmap_memory, 0, 0);
+
 }
 
 internal_fn void w32_update_window(HDC device_context, int x, int y, int width, int height)
@@ -18,9 +44,9 @@ internal_fn void w32_update_window(HDC device_context, int x, int y, int width, 
     StretchDIBits(device_context, 
         x, y, width, height, 
         x, y, width, height, 
-        ZZ, 
-        ZZ, 
-        ZZ, 
+        bitmap_memory, 
+        &bitmap_info, 
+        DIB_RGB_COLORS,
         SRCCOPY);
 }
 
