@@ -8,43 +8,45 @@
 // global variable for now
 global_variable bool running;
 
+// TODO(refactor) remove these globals
 global_variable BITMAPINFO bitmap_info;
-global_variable void *bitmap_memory;
-global_variable HBITMAP bitmap_handle;
-global_variable HDC bitmap_device_context;
+global_variable void *BITMAP_MEMORY;
+global_variable int BITMAP_WIDTH;
+global_variable int BITMAP_HEIGHT;
 
 internal_fn void w32_resize_dib_section(int width, int height)
 {
 
-    if (bitmap_handle) 
+    if (BITMAP_MEMORY)
     {
-        DeleteObject(bitmap_handle);
-    }
-    if (!bitmap_handle) 
-    {
-        bitmap_device_context = CreateCompatibleDC(0);
+        VirtualFree(BITMAP_MEMORY, NULL, MEM_RELEASE);
     }
 
+    BITMAP_WIDTH = width;
+    BITMAP_HEIGHT = height;
+
     bitmap_info.bmiHeader.biSize = sizeof(bitmap_info.bmiHeader);
-    bitmap_info.bmiHeader.biWidth = width;
-    bitmap_info.bmiHeader.biHeight = height;
+    bitmap_info.bmiHeader.biWidth = BITMAP_WIDTH;
+    bitmap_info.bmiHeader.biHeight = BITMAP_HEIGHT;
     bitmap_info.bmiHeader.biPlanes = 1;
     bitmap_info.bmiHeader.biBitCount = 32;
     bitmap_info.bmiHeader.biCompression = BI_RGB;
 
-    bitmap_handle = CreateDIBSection(
-        bitmap_device_context, 
-        &bitmap_info, 
-        DIB_RGB_COLORS, &bitmap_memory, 0, 0);
+    int bitmap_mem_size = (BITMAP_WIDTH * BITMAP_HEIGHT) * 4; 
+    BITMAP_MEMORY = VirtualAlloc(NULL, bitmap_mem_size, MEM_COMMIT, PAGE_READWRITE);
 
 }
 
-internal_fn void w32_update_window(HDC device_context, int x, int y, int width, int height)
+internal_fn void w32_update_window(HDC device_context, RECT *window_rect, int x, int y, int width, int height)
 {
+
+    int window_width = window_rect->right - window_rect->left;
+    int window_height = window_rect->bottom - window_rect->top;
+
     StretchDIBits(device_context, 
-        x, y, width, height, 
-        x, y, width, height, 
-        bitmap_memory, 
+        NULL, NULL, BITMAP_WIDTH, BITMAP_HEIGHT, 
+        NULL, NULL, window_width, window_height, 
+        BITMAP_MEMORY, 
         &bitmap_info, 
         DIB_RGB_COLORS,
         SRCCOPY);
@@ -64,6 +66,7 @@ LRESULT CALLBACK w32_main_window_callback(
     {
         case WM_SIZE: 
         {
+
             RECT client_rect;
             GetClientRect(window, &client_rect);
             int width = client_rect.right - client_rect.left;
@@ -92,13 +95,16 @@ LRESULT CALLBACK w32_main_window_callback(
             PAINTSTRUCT paint;
             HDC device_context = BeginPaint(window, &paint);
 
+            RECT client_rect;
+            GetClientRect(window, &client_rect);
+
             // get x, y, height and width to passed to the PatBlt
             int x = paint.rcPaint.left;
             int y = paint.rcPaint.top;
             int width = paint.rcPaint.right - paint.rcPaint.left;
             int height = paint.rcPaint.bottom - paint.rcPaint.top;
 
-            w32_update_window(device_context, x, y, width, height);
+            w32_update_window(device_context, &client_rect, x, y, width, height);
             
             EndPaint(window, &paint);
         } break;
