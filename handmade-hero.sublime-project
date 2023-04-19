@@ -18,13 +18,16 @@
             "cmd": ["build.bat", "${project_base_name}"],
             "shell": true,
             "file_regex": "^(.+?)\\((\\d+)\\)\\s*:\\s*(?:fatal error|error|warning) C\\d+\\s*:\\s*(.+)$", 
-            "variants":
-    [
-        {
-            "name": "run",
-            "cmd": ["build/app.exe"]
-        }
-    ]
+             "variants": [
+                {
+                    "name": "run_debugger",
+                    "cmd": ["remedybg.exe", "-g", "debug-session.rdbg"],
+                    "shell": true,
+                    "windows": {
+                        "shell": true
+                    }
+                }
+            ]
         }
         
     ]
