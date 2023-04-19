@@ -1,5 +1,5 @@
 #include <Windows.h>
-#include <stdio.h>
+#include <stdint.h>
 
 #define internal_fn static 
 #define local_persist static 
@@ -27,13 +27,39 @@ internal_fn void w32_resize_dib_section(int width, int height)
 
     bitmap_info.bmiHeader.biSize = sizeof(bitmap_info.bmiHeader);
     bitmap_info.bmiHeader.biWidth = BITMAP_WIDTH;
-    bitmap_info.bmiHeader.biHeight = BITMAP_HEIGHT;
+    bitmap_info.bmiHeader.biHeight = -BITMAP_HEIGHT;
     bitmap_info.bmiHeader.biPlanes = 1;
     bitmap_info.bmiHeader.biBitCount = 32;
     bitmap_info.bmiHeader.biCompression = BI_RGB;
 
-    int bitmap_mem_size = (BITMAP_WIDTH * BITMAP_HEIGHT) * 4; 
+    int bytes_per_pixel = 4;
+    int bitmap_mem_size = (BITMAP_WIDTH * BITMAP_HEIGHT) * bytes_per_pixel; 
     BITMAP_MEMORY = VirtualAlloc(NULL, bitmap_mem_size, MEM_COMMIT, PAGE_READWRITE);
+
+    int pitch = width * bytes_per_pixel;        // how big the row is
+    uint8_t *row = (uint8_t *)BITMAP_MEMORY;
+
+    for (int y = 0; y < BITMAP_HEIGHT; ++y) 
+    {
+        uint8_t *pixel = (uint8_t *)row;      // once in the for loop we can start thinking pixel by pixel
+        for (int x = 0; x < BITMAP_WIDTH; ++x) 
+        {
+            *pixel = (uint8_t)x;
+            ++pixel;
+        
+            *pixel = (uint8_t)y;
+            ++pixel;
+        
+            *pixel = 200;
+            ++pixel;
+
+            *pixel = 0;
+            ++pixel;
+        
+        }
+
+        row += pitch;
+    }
 
 }
 
