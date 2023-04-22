@@ -13,6 +13,39 @@ global_variable BITMAPINFO bitmap_info;
 global_variable void *BITMAP_MEMORY;
 global_variable int BITMAP_WIDTH;
 global_variable int BITMAP_HEIGHT;
+global_variable int bytes_per_pixel = 4;
+
+
+internal_fn void render_weird_gradient(int x_offset, int y_offset) 
+{
+    int width = BITMAP_WIDTH;
+    int height = BITMAP_HEIGHT;
+
+    int pitch = width * bytes_per_pixel;        // how big the row is
+    uint8_t *row = (uint8_t *)BITMAP_MEMORY;
+
+    for (int y = 0; y < height; ++y) 
+    {
+        uint8_t *pixel = (uint8_t *)row;      // once in the for loop we can start thinking pixel by pixel
+        for (int x = 0; x < width; ++x) 
+        {
+            *pixel = (uint8_t)(x + x_offset);
+            ++pixel;
+        
+            *pixel = (uint8_t)(y + y_offset);
+            ++pixel;
+        
+            *pixel = 0;
+            ++pixel;
+
+            *pixel = 0;
+            ++pixel;
+        
+        }
+
+        row += pitch;
+    }
+}
 
 internal_fn void w32_resize_dib_section(int width, int height)
 {
@@ -32,34 +65,11 @@ internal_fn void w32_resize_dib_section(int width, int height)
     bitmap_info.bmiHeader.biBitCount = 32;
     bitmap_info.bmiHeader.biCompression = BI_RGB;
 
-    int bytes_per_pixel = 4;
     int bitmap_mem_size = (BITMAP_WIDTH * BITMAP_HEIGHT) * bytes_per_pixel; 
     BITMAP_MEMORY = VirtualAlloc(NULL, bitmap_mem_size, MEM_COMMIT, PAGE_READWRITE);
 
-    int pitch = width * bytes_per_pixel;        // how big the row is
-    uint8_t *row = (uint8_t *)BITMAP_MEMORY;
+    
 
-    for (int y = 0; y < BITMAP_HEIGHT; ++y) 
-    {
-        uint8_t *pixel = (uint8_t *)row;      // once in the for loop we can start thinking pixel by pixel
-        for (int x = 0; x < BITMAP_WIDTH; ++x) 
-        {
-            *pixel = (uint8_t)x;
-            ++pixel;
-        
-            *pixel = (uint8_t)y;
-            ++pixel;
-        
-            *pixel = 200;
-            ++pixel;
-
-            *pixel = 0;
-            ++pixel;
-        
-        }
-
-        row += pitch;
-    }
 
 }
 
@@ -177,29 +187,46 @@ int CALLBACK WinMain(
         if (window_handle) 
         {
             running = true;
-            MSG Message;
+            int x_offset = 0;
+            int y_offset = 0;
             while (running) 
             {
-                BOOL message_is_ok = GetMessage(&Message, 0, 0, 0);
-                if (message_is_ok > 0) 
+
+                MSG message_incoming;
+
+                while (PeekMessage(&message_incoming, 0, 0, 0, PM_REMOVE)) 
                 {
-                    TranslateMessage(&Message);
-                    DispatchMessage(&Message);
-                } 
-                else 
-                {
-                    break; // error
+                    if (message_incoming.message == WM_QUIT) 
+                    {
+                        running = false;
+                    }
+                    // FIXME(fixme) 
+                    TranslateMessage(&message_incoming);
+                    DispatchMessage(&message_incoming);
+
                 }
+
+                render_weird_gradient(x_offset, y_offset);
+                HDC device_context = GetDC(window_handle);
+                RECT window_rect;
+                GetClientRect(window_handle, &window_rect);
+                int window_width = window_rect.right - window_rect.left;
+                int window_height = window_rect.bottom - window_rect.top;
+                w32_update_window(device_context, &window_rect, 0, 0, window_width, window_height);
+                ReleaseDC(window_handle, device_context);
+
+                ++x_offset;
+                ++y_offset;
             }
         } 
         else 
         {
-            // todo error handle
+            // TODO(refactor) add error logging
         }
     } 
     else 
     {
-        // todo error handle
+        // TODO(refactor) add error logging
     }
 
     return(0);
