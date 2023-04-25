@@ -1,89 +1,102 @@
-#include <Windows.h>
+#include <windows.h>
 #include <stdint.h>
 
 #define internal_fn static 
 #define local_persist static 
 #define global_variable static 
 
+
+
+struct W32_offscreen_buffer
+{
+    BITMAPINFO info;
+    void *memory;
+    int width;
+    int height;
+    int pitch;
+    int bytes_per_pixel;
+};
+
+struct W32_window_dimensions 
+{
+    int width;
+    int height;
+};
+
 // global variable for now
 global_variable bool running;
+global_variable W32_offscreen_buffer offscreen_buffer;
 
-// TODO(refactor) remove these globals
-global_variable BITMAPINFO bitmap_info;
-global_variable void *BITMAP_MEMORY;
-global_variable int BITMAP_WIDTH;
-global_variable int BITMAP_HEIGHT;
-global_variable int bytes_per_pixel = 4;
-
-
-internal_fn void render_weird_gradient(int x_offset, int y_offset) 
+W32_window_dimensions w32_get_window_dimensions(HWND window)
 {
-    int width = BITMAP_WIDTH;
-    int height = BITMAP_HEIGHT;
+    W32_window_dimensions result;
 
-    int pitch = width * bytes_per_pixel;        // how big the row is
-    uint8_t *row = (uint8_t *)BITMAP_MEMORY;
+    RECT client_rect;
+    GetClientRect(window, &client_rect);
+    result.width = client_rect.right - client_rect.left;
+    result.height = client_rect.bottom - client_rect.top;
 
-    for (int y = 0; y < height; ++y) 
+    return(result);
+
+}
+
+internal_fn void render_weird_gradient(W32_offscreen_buffer buffer, int x_offset, int y_offset) 
+{
+
+    uint8_t *row = (uint8_t *)buffer.memory;
+
+    for (int y = 0; y < buffer.height; ++y) 
     {
-        uint8_t *pixel = (uint8_t *)row;      // once in the for loop we can start thinking pixel by pixel
-        for (int x = 0; x < width; ++x) 
+        uint32_t *pixel = (uint32_t *)row;      // once in the for loop we can start thinking pixel by pixel
+        for (int x = 0; x < buffer.width; ++x) 
         {
-            *pixel = (uint8_t)(x + x_offset);
-            ++pixel;
-        
-            *pixel = (uint8_t)(y + y_offset);
-            ++pixel;
-        
-            *pixel = 0;
-            ++pixel;
+            uint8_t blue = (x + x_offset);
+            uint8_t green = (y + y_offset);
 
-            *pixel = 0;
-            ++pixel;
-        
+            *pixel++ = ((green << 8) | blue);
         }
 
-        row += pitch;
+        row += buffer.pitch;
     }
 }
 
-internal_fn void w32_resize_dib_section(int width, int height)
+internal_fn void w32_resize_dib_section(W32_offscreen_buffer *buffer, int width, int height)
 {
 
-    if (BITMAP_MEMORY)
+    if (buffer->memory)
     {
-        VirtualFree(BITMAP_MEMORY, NULL, MEM_RELEASE);
+        VirtualFree(buffer->memory, NULL, MEM_RELEASE);
     }
 
-    BITMAP_WIDTH = width;
-    BITMAP_HEIGHT = height;
+    buffer->width = width;
+    buffer->height = height;
+    buffer->bytes_per_pixel = 4;
 
-    bitmap_info.bmiHeader.biSize = sizeof(bitmap_info.bmiHeader);
-    bitmap_info.bmiHeader.biWidth = BITMAP_WIDTH;
-    bitmap_info.bmiHeader.biHeight = -BITMAP_HEIGHT;
-    bitmap_info.bmiHeader.biPlanes = 1;
-    bitmap_info.bmiHeader.biBitCount = 32;
-    bitmap_info.bmiHeader.biCompression = BI_RGB;
+    buffer->info.bmiHeader.biSize = sizeof(buffer->info.bmiHeader);
+    buffer->info.bmiHeader.biWidth = buffer->width;
+    buffer->info.bmiHeader.biHeight = -buffer->height;
+    buffer->info.bmiHeader.biPlanes = 1;
+    buffer->info.bmiHeader.biBitCount = 32;
+    buffer->info.bmiHeader.biCompression = BI_RGB;
 
-    int bitmap_mem_size = (BITMAP_WIDTH * BITMAP_HEIGHT) * bytes_per_pixel; 
-    BITMAP_MEMORY = VirtualAlloc(NULL, bitmap_mem_size, MEM_COMMIT, PAGE_READWRITE);
+    int bitmap_mem_size = (buffer->width * buffer->height) * buffer->bytes_per_pixel; 
+    buffer->memory = VirtualAlloc(NULL, bitmap_mem_size, MEM_COMMIT, PAGE_READWRITE);
 
-    
-
+    buffer->pitch = buffer->width * buffer->bytes_per_pixel;        // how big the row is
 
 }
 
-internal_fn void w32_update_window(HDC device_context, RECT *window_rect, int x, int y, int width, int height)
+internal_fn void w32_copy_buffer_to_window(HDC device_context, int window_width, int window_height, 
+                                            W32_offscreen_buffer buffer)
 {
 
-    int window_width = window_rect->right - window_rect->left;
-    int window_height = window_rect->bottom - window_rect->top;
+
 
     StretchDIBits(device_context, 
-        NULL, NULL, BITMAP_WIDTH, BITMAP_HEIGHT, 
         NULL, NULL, window_width, window_height, 
-        BITMAP_MEMORY, 
-        &bitmap_info, 
+        NULL, NULL, buffer.width, buffer.height, 
+        buffer.memory, 
+        &buffer.info, 
         DIB_RGB_COLORS,
         SRCCOPY);
 }
@@ -103,17 +116,12 @@ LRESULT CALLBACK w32_main_window_callback(
         case WM_SIZE: 
         {
 
-            RECT client_rect;
-            GetClientRect(window, &client_rect);
-            int width = client_rect.right - client_rect.left;
-            int height = client_rect.bottom - client_rect.top;
-            w32_resize_dib_section(width, height);
         } break;
 
         case WM_DESTROY: 
-        {
+        {   
             running = false;
-        } break;
+        } break; 
 
         case WM_CLOSE: 
         {
@@ -131,16 +139,14 @@ LRESULT CALLBACK w32_main_window_callback(
             PAINTSTRUCT paint;
             HDC device_context = BeginPaint(window, &paint);
 
-            RECT client_rect;
-            GetClientRect(window, &client_rect);
-
             // get x, y, height and width to passed to the PatBlt
             int x = paint.rcPaint.left;
             int y = paint.rcPaint.top;
             int width = paint.rcPaint.right - paint.rcPaint.left;
             int height = paint.rcPaint.bottom - paint.rcPaint.top;
 
-            w32_update_window(device_context, &client_rect, x, y, width, height);
+            W32_window_dimensions window_dims = w32_get_window_dimensions(window);
+            w32_copy_buffer_to_window(device_context, window_dims.width, window_dims.height, offscreen_buffer);
             
             EndPaint(window, &paint);
         } break;
@@ -162,6 +168,8 @@ int CALLBACK WinMain(
 {
 
     WNDCLASS window_class = {};
+
+    w32_resize_dib_section(&offscreen_buffer, 1280, 720);
 
     window_class.style = CS_OWNDC|CS_HREDRAW|CS_VREDRAW;
     window_class.lpfnWndProc = w32_main_window_callback;
@@ -189,10 +197,10 @@ int CALLBACK WinMain(
             running = true;
             int x_offset = 0;
             int y_offset = 0;
+            MSG message_incoming;
             while (running) 
             {
 
-                MSG message_incoming;
 
                 while (PeekMessage(&message_incoming, 0, 0, 0, PM_REMOVE)) 
                 {
@@ -206,13 +214,11 @@ int CALLBACK WinMain(
 
                 }
 
-                render_weird_gradient(x_offset, y_offset);
+                render_weird_gradient(offscreen_buffer, x_offset, y_offset);
                 HDC device_context = GetDC(window_handle);
-                RECT window_rect;
-                GetClientRect(window_handle, &window_rect);
-                int window_width = window_rect.right - window_rect.left;
-                int window_height = window_rect.bottom - window_rect.top;
-                w32_update_window(device_context, &window_rect, 0, 0, window_width, window_height);
+                
+                W32_window_dimensions window_dims = w32_get_window_dimensions(window_handle);
+                w32_copy_buffer_to_window(device_context, window_dims.width, window_dims.height, offscreen_buffer);
                 ReleaseDC(window_handle, device_context);
 
                 ++x_offset;
