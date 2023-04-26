@@ -3,8 +3,8 @@
 echo --- building project: %1 ---
 echo.
 
-cl /nologo /Zi /Fe:build\app.exe /Fo:build\ /Fd:build\ code/win32_handmade.cpp ^
- /link /SUBSYSTEM:WINDOWS user32.lib gdi32.lib
+cl /Zi /Fe:build\app.exe /Fo:build\ /Fd:build\ code/win32_handmade.cpp ^
+ /link /SUBSYSTEM:WINDOWS user32.lib gdi32.lib XInput.lib
 
 echo.
 echo Build completed at %TIME:~0,8%
