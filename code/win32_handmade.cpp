@@ -23,9 +23,42 @@ struct W32_window_dimensions
     int height;
 };
 
+
+#define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
+typedef X_INPUT_GET_STATE(x_input_get_state);
+X_INPUT_GET_STATE(x_input_get_state_stub)
+{
+    return(0);
+}
+global_variable x_input_get_state *XInputGetState_ = x_input_get_state_stub;
+
+#define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
+typedef X_INPUT_SET_STATE(x_input_set_state);
+X_INPUT_SET_STATE(x_input_set_state_stub)
+{
+    return(0);
+}
+global_variable x_input_set_state *XInputSetState_ = x_input_set_state_stub;
+
+#define XInputGetState XInputGetState_
+#define XInputSetState XInputSetState_
+
+internal_fn void w32_load_xinput(void)
+{
+    HMODULE XInputLibrary = LoadLibrary("xinput1_3.dll");
+    if (XInputLibrary)
+    {
+        XInputGetState = (x_input_get_state *)GetProcAddress(XInputLibrary, "XInputGetState");
+        XInputSetState = (x_input_set_state *)GetProcAddress(XInputLibrary, "XInputSetState");
+    }
+}
+
 // global variable for now
 global_variable bool running;
 global_variable W32_offscreen_buffer offscreen_buffer;
+
+global_variable int x_offset = 0;
+global_variable int y_offset = 0;
 
 W32_window_dimensions w32_get_window_dimensions(HWND window)
 {
@@ -40,15 +73,15 @@ W32_window_dimensions w32_get_window_dimensions(HWND window)
 
 }
 
-internal_fn void render_weird_gradient(W32_offscreen_buffer buffer, int x_offset, int y_offset) 
+internal_fn void render_weird_gradient(W32_offscreen_buffer *buffer, int x_offset, int y_offset) 
 {
 
-    uint8_t *row = (uint8_t *)buffer.memory;
+    uint8_t *row = (uint8_t *)buffer->memory;
 
-    for (int y = 0; y < buffer.height; ++y) 
+    for (int y = 0; y < buffer->height; ++y) 
     {
         uint32_t *pixel = (uint32_t *)row;      // once in the for loop we can start thinking pixel by pixel
-        for (int x = 0; x < buffer.width; ++x) 
+        for (int x = 0; x < buffer->width; ++x) 
         {
             uint8_t blue = (x + x_offset);
             uint8_t green = (y + y_offset);
@@ -56,7 +89,7 @@ internal_fn void render_weird_gradient(W32_offscreen_buffer buffer, int x_offset
             *pixel++ = ((green << 8) | blue);
         }
 
-        row += buffer.pitch;
+        row += buffer->pitch;
     }
 }
 
@@ -123,6 +156,70 @@ LRESULT CALLBACK w32_main_window_callback(
             running = false;
         } break; 
 
+        case WM_SYSKEYDOWN:
+        case WM_SYSKEYUP:
+        case WM_KEYDOWN:
+        case WM_KEYUP:
+        {
+            uint32_t vk_code = w_param;
+            bool key_was_down = ((l_param & (1 << 30)) != 0);
+            bool key_is_down = ((l_param & (1 << 31)) == 0);
+            if (key_was_down != key_is_down) {
+                if (vk_code == 'W')
+                {
+
+                }
+                else if (vk_code == 'A')
+                {
+
+                }
+                else if (vk_code == 'S')
+                {
+                    
+                }
+                else if (vk_code == 'D')
+                {
+                    
+                }
+                else if (vk_code == 'Q')
+                {
+                    
+                }
+                else if (vk_code == 'E')
+                {
+                    
+                }
+                else if (vk_code == VK_LEFT)
+                {
+                    x_offset += 50;
+                }
+                else if (vk_code == VK_RIGHT)
+                {
+                    x_offset -= 50;
+                    
+                }
+                else if (vk_code == VK_UP)
+                {
+                    y_offset += 50;
+                    
+                }
+                else if (vk_code == VK_DOWN)
+                {
+                    y_offset -= 50;
+                    
+                }
+                else if (vk_code == VK_ESCAPE)
+                {
+                    running = false;
+                }            
+                else if (vk_code == VK_SPACE)
+                {
+                    
+                }
+            }
+
+        } break;
+
         case WM_CLOSE: 
         {
             running = false;
@@ -165,7 +262,9 @@ int CALLBACK WinMain(
     HINSTANCE prev_instance,
     LPSTR command_line,
     int show_code)
-{
+{   
+
+    w32_load_xinput();
 
     WNDCLASS window_class = {};
 
@@ -195,14 +294,13 @@ int CALLBACK WinMain(
         if (window_handle) 
         {
             running = true;
-            int x_offset = 0;
-            int y_offset = 0;
+
             MSG message_incoming;
             while (running) 
             {
 
 
-                while (PeekMess age(&message_incoming, 0, 0, 0, PM_REMOVE)) 
+                while (PeekMessage(&message_incoming, 0, 0, 0, PM_REMOVE)) 
                 {
                     if (message_incoming.message == WM_QUIT) 
                     {
@@ -221,7 +319,23 @@ int CALLBACK WinMain(
                     {
                         // controller is plugged in
                         XINPUT_GAMEPAD *gamepad = &controller_state.Gamepad;
-                        
+
+                        bool gamepad_up = (gamepad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
+                        bool gamepad_down = (gamepad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
+                        bool gamepad_left = (gamepad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
+                        bool gamepad_right = (gamepad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
+                        bool gamepad_start = (gamepad->wButtons & XINPUT_GAMEPAD_START);
+                        bool gamepad_back = (gamepad->wButtons & XINPUT_GAMEPAD_BACK);
+                        bool gamepad_left_shoulder = (gamepad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
+                        bool gamepad_right_shoulder = (gamepad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
+                        bool gamepad_A = (gamepad->wButtons & XINPUT_GAMEPAD_A);
+                        bool gamepad_B = (gamepad->wButtons & XINPUT_GAMEPAD_B);
+                        bool gamepad_X = (gamepad->wButtons & XINPUT_GAMEPAD_X);
+                        bool gamepad_Y = (gamepad->wButtons & XINPUT_GAMEPAD_Y);
+
+                        uint16_t gamepad_stick_X = gamepad->sThumbLX; 
+                        uint16_t gamepad_stick_Y = gamepad->sThumbLY; 
+
                     }
                     else 
                     {
@@ -230,15 +344,15 @@ int CALLBACK WinMain(
 
                 }
 
-                render_weird_gradient(offscreen_buffer, x_offset, y_offset);
+                render_weird_gradient(&offscreen_buffer, x_offset, y_offset);
                 HDC device_context = GetDC(window_handle);
                 
                 W32_window_dimensions window_dims = w32_get_window_dimensions(window_handle);
                 w32_copy_buffer_to_window(device_context, window_dims.width, window_dims.height, offscreen_buffer);
                 ReleaseDC(window_handle, device_context);
 
-                ++x_offset;
-                ++y_offset;
+                // ++x_offset;
+                // ++y_offset;
             }
         } 
         else 
