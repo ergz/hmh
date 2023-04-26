@@ -1,11 +1,11 @@
-#include <windows.h>
 #include <stdint.h>
+
+#include <windows.h>
+#include <xinput.h>
 
 #define internal_fn static 
 #define local_persist static 
 #define global_variable static 
-
-
 
 struct W32_offscreen_buffer
 {
@@ -202,7 +202,7 @@ int CALLBACK WinMain(
             {
 
 
-                while (PeekMessage(&message_incoming, 0, 0, 0, PM_REMOVE)) 
+                while (PeekMess age(&message_incoming, 0, 0, 0, PM_REMOVE)) 
                 {
                     if (message_incoming.message == WM_QUIT) 
                     {
@@ -211,6 +211,22 @@ int CALLBACK WinMain(
                     // FIXME(fixme) 
                     TranslateMessage(&message_incoming);
                     DispatchMessage(&message_incoming);
+
+                }
+
+                for (DWORD controller_index = 0; controller_index < XUSER_MAX_COUNT; controller_index++)
+                {
+                    XINPUT_STATE controller_state;
+                    if (XInputGetState(controller_index, &controller_state) == ERROR_SUCCESS)
+                    {
+                        // controller is plugged in
+                        XINPUT_GAMEPAD *gamepad = &controller_state.Gamepad;
+                        
+                    }
+                    else 
+                    {
+                        // controller not plugged in
+                    }
 
                 }
 
