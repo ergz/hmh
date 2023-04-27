@@ -164,7 +164,7 @@ LRESULT CALLBACK w32_main_window_callback(
             uint32_t vk_code = w_param;
             bool key_was_down = ((l_param & (1 << 30)) != 0);
             bool key_is_down = ((l_param & (1 << 31)) == 0);
-            if (key_was_down != key_is_down) {
+            if (key_was_down != key_is_down) { // NOTE(ergz) dont accept keep-holding-down key presses
                 if (vk_code == 'W')
                 {
 
@@ -191,21 +191,21 @@ LRESULT CALLBACK w32_main_window_callback(
                 }
                 else if (vk_code == VK_LEFT)
                 {
-                    x_offset += 50;
+                    x_offset += 10;
                 }
                 else if (vk_code == VK_RIGHT)
                 {
-                    x_offset -= 50;
+                    x_offset -= 10;
                     
                 }
                 else if (vk_code == VK_UP)
                 {
-                    y_offset += 50;
+                    y_offset += 10;
                     
                 }
                 else if (vk_code == VK_DOWN)
                 {
-                    y_offset -= 50;
+                    y_offset -= 10;
                     
                 }
                 else if (vk_code == VK_ESCAPE)
