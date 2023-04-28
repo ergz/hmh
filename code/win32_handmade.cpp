@@ -28,15 +28,15 @@ struct W32_window_dimensions
 typedef X_INPUT_GET_STATE(x_input_get_state);
 X_INPUT_GET_STATE(x_input_get_state_stub)
 {
-    return(0);
+    return(ERROR_DEVICE_NOT_CONNECTED);
 }
 global_variable x_input_get_state *XInputGetState_ = x_input_get_state_stub;
-
+ 
 #define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
 typedef X_INPUT_SET_STATE(x_input_set_state);
 X_INPUT_SET_STATE(x_input_set_state_stub)
 {
-    return(0);
+    return(ERROR_DEVICE_NOT_CONNECTED);
 }
 global_variable x_input_set_state *XInputSetState_ = x_input_set_state_stub;
 
@@ -45,7 +45,12 @@ global_variable x_input_set_state *XInputSetState_ = x_input_set_state_stub;
 
 internal_fn void w32_load_xinput(void)
 {
-    HMODULE XInputLibrary = LoadLibrary("xinput1_3.dll");
+    // TODO(ergz) xinput load dll check versions
+    HMODULE XInputLibrary = LoadLibrary("xinput1_4.dll");
+    if (!XInputLibrary)
+    {
+        HMODULE XInputLibrary = LoadLibrary("xinput1_3.dll");
+    }
     if (XInputLibrary)
     {
         XInputGetState = (x_input_get_state *)GetProcAddress(XInputLibrary, "XInputGetState");
