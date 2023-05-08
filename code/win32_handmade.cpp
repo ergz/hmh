@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <xinput.h>
+#include <dsound.h>
 
 #define internal_fn static 
 #define local_persist static 
@@ -24,7 +25,14 @@ struct W32_window_dimensions
 };
 
 
+// this is a macro that will expand to a function signature when passed in a value for name
 #define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
+
+/*
+here the macro is first expanded to be 
+DWOTD WINAPI x_input_get_state(DWORD dwUserIndex, XINPUT_STATE *pState);
+the typedef here creates a new type "x_input_get_state" for 
+*/
 typedef X_INPUT_GET_STATE(x_input_get_state);
 X_INPUT_GET_STATE(x_input_get_state_stub)
 {
@@ -64,6 +72,85 @@ global_variable W32_offscreen_buffer offscreen_buffer;
 
 global_variable int x_offset = 0;
 global_variable int y_offset = 0;
+
+#define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS, LPUNKNOWN punkOuter)
+typedef DIRECT_SOUND_CREATE(direct_sound_create);
+
+internal_fn void w32_init_direct_sound(HWND window, int32_t sample_per_second, int32_t buffer_size)
+{
+    HMODULE direct_sound_library = LoadLibrary("dsound.dll");
+ 
+    if (direct_sound_library)
+    {
+        direct_sound_create *DirectSoundCreate = (direct_sound_create *)GetProcAddress(direct_sound_library, "DirectSoundCreate");
+        LPDIRECTSOUND direct_sound;
+
+        if (DirectSoundCreate && SUCCEEDED(DirectSoundCreate(0, &direct_sound, 0))) // direct sound gets filled here
+        {
+            WAVEFORMATEX wave_format = {};
+            wave_format.wFormatTag = WAVE_FORMAT_PCM;
+            wave_format.nChannels = 2;
+            wave_format.nSamplesPerSec = sample_per_second;
+            wave_format.nBlockAlign = (wave_format.nChannels * wave_format.wBitsPerSample) / 8;
+            wave_format.nAvgBytesPerSec = wave_format.nSamplesPerSec * wave_format.nBlockAlign;
+            wave_format.wBitsPerSample = 16;
+            wave_format.cbSize = 0;
+
+            if (SUCCEEDED(direct_sound->SetCooperativeLevel(window, DSSCL_PRIORITY)))
+            {
+                DSBUFFERDESC buffer_description = {};
+                buffer_description.dwSize = sizeof(buffer_description);
+                buffer_description.dwFlags = DSBCAPS_PRIMARYBUFFER;
+                buffer_description.dwBufferBytes = 0;
+
+                LPDIRECTSOUNDBUFFER primary_buffer;
+
+                if (SUCCEEDED(direct_sound->CreateSoundBuffer(&buffer_description, &primary_buffer, 0)))
+                {
+                    if (SUCCEEDED(primary_buffer->SetFormat(&wave_format)))
+                    {
+
+                    }
+                    else
+                    {
+                        // TODO logging
+                    }
+                }
+                else
+                {
+                            // TODO diag logs
+                }
+            }
+            else
+            {
+                // TODO diag logs
+            }
+            DSBUFFERDESC buffer_description = {};
+            buffer_description.dwSize = sizeof(buffer_description);
+            buffer_description.dwFlags = 0;
+            buffer_description.dwBufferBytes = buffer_size;
+            buffer_description.lpwfxFormat = &wave_format;
+
+            LPDIRECTSOUNDBUFFER secondary_buffer;
+            if (SUCCEEDED(direct_sound->CreateSoundBuffer(&buffer_description, &secondary_buffer, 0)))
+            {
+                
+            }
+            else
+            {
+                            // TODO diag logs
+            }
+        }
+        else
+        {
+                    // TODO diag logs
+        }
+    }
+    else
+    {
+        // TODO diag logs
+    }
+}
 
 W32_window_dimensions w32_get_window_dimensions(HWND window)
 {
@@ -298,6 +385,8 @@ int CALLBACK WinMain(
             0);
         if (window_handle) 
         {
+
+            w32_init_direct_sound(window_handle, 48000, 48000*sizeof(int16_t)*2);
             running = true;
 
             MSG message_incoming;
