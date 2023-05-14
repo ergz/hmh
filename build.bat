@@ -3,7 +3,7 @@
 echo --- building project: %1 ---
 echo.
 
-cl /Zi /Fe:build\app.exe /Fo:build\ /Fd:build\ code/win32_handmade.cpp ^
+cl /Zi /FC /Fe:build\app.exe /Fo:build\ /Fd:build\ code/win32_handmade.cpp ^
  /link /SUBSYSTEM:WINDOWS user32.lib gdi32.lib 
 
 echo.

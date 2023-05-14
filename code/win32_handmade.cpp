@@ -1,12 +1,20 @@
 #include <stdint.h>
+#include <stdio.h>
 
 #include <windows.h>
 #include <xinput.h>
 #include <dsound.h>
+#include <math.h>
+
 
 #define internal_fn static 
 #define local_persist static 
 #define global_variable static 
+
+#define PI32 3.14159265359f
+
+typedef float real32;
+typedef double real64;
 
 struct W32_offscreen_buffer
 {
@@ -24,6 +32,28 @@ struct W32_window_dimensions
     int height;
 };
 
+struct W32_sound_output
+{
+    int samples_per_second;
+    int tone_hz;
+    int16_t tone_volume;
+    uint32_t running_sample_index;
+    int wave_period;
+    int bytes_per_sample;
+    int secondary_buffer_size;
+    real32 t_sine;
+    int latency_sample_count;
+
+};
+
+// global variable for now
+global_variable bool running;
+global_variable W32_offscreen_buffer GLOBAL_OFFSCREEN_BUFFER;
+global_variable LPDIRECTSOUNDBUFFER GLOBAL_SECONDARY_BUFFER;
+global_variable bool sound_is_playing;
+
+global_variable int x_offset = 0;
+global_variable int y_offset = 0;
 
 // this is a macro that will expand to a function signature when passed in a value for name
 #define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
@@ -66,17 +96,67 @@ internal_fn void w32_load_xinput(void)
     }
 }
 
-// global variable for now
-global_variable bool running;
-global_variable W32_offscreen_buffer offscreen_buffer;
-
-global_variable int x_offset = 0;
-global_variable int y_offset = 0;
 
 #define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS, LPUNKNOWN punkOuter)
 typedef DIRECT_SOUND_CREATE(direct_sound_create);
 
-internal_fn void w32_init_direct_sound(HWND window, int32_t sample_per_second, int32_t buffer_size)
+internal_fn void w32_fill_sound_buffer(W32_sound_output *sound_output, DWORD byte_to_lock, DWORD bytes_to_write)
+{
+
+    VOID *region_1;
+    DWORD region_1_size;
+    VOID *region_2;
+    DWORD region_2_size;
+
+    HRESULT lock_error = GLOBAL_SECONDARY_BUFFER->Lock(
+        byte_to_lock,
+        bytes_to_write,
+        &region_1, &region_1_size,
+        &region_2, &region_2_size,
+        0
+    );
+
+    if (SUCCEEDED(lock_error)) 
+    {
+        DWORD region_1_sample_count = region_1_size/sound_output->bytes_per_sample;
+        int16_t *sample_output = (int16_t *)region_1;
+        for (DWORD sample_index = 0; sample_index < region_1_sample_count; sample_index++)
+        {
+            real32 sine_value = sinf(sound_output->t_sine);
+            int16_t sample_value = (int16_t)(sine_value * sound_output->tone_volume);
+
+            // assign value to sample and increase the pointer
+            *sample_output++ = sample_value;
+            *sample_output++ = sample_value;
+
+            sound_output->t_sine += 2.0f*PI32*1.0f/(real32)sound_output->wave_period;
+            ++sound_output->running_sample_index;
+        }
+
+        DWORD region_2_sample_count = region_2_size/sound_output->bytes_per_sample;
+        sample_output = (int16_t *)region_2;
+        for (DWORD sample_index = 0; sample_index < region_2_sample_count; sample_index++)
+        {
+            real32 sine_value = sinf(sound_output->t_sine);
+            int16_t sample_value = (int16_t)(sine_value * sound_output->tone_volume);
+
+            // assign value to sample and increase the pointer
+            *sample_output++ = sample_value;
+            *sample_output++ = sample_value;
+
+            sound_output->t_sine += 2.0f*PI32*1.0f/(real32)sound_output->wave_period;
+            ++sound_output->running_sample_index;
+        }
+
+        GLOBAL_SECONDARY_BUFFER->Unlock(region_1, region_1_size, region_2, region_2_size);
+    }
+
+
+}
+
+
+
+internal_fn void w32_init_direct_sound(HWND window, int32_t samples_per_second, int32_t buffer_size)
 {
     HMODULE direct_sound_library = LoadLibrary("dsound.dll");
  
@@ -90,10 +170,10 @@ internal_fn void w32_init_direct_sound(HWND window, int32_t sample_per_second, i
             WAVEFORMATEX wave_format = {};
             wave_format.wFormatTag = WAVE_FORMAT_PCM;
             wave_format.nChannels = 2;
-            wave_format.nSamplesPerSec = sample_per_second;
+            wave_format.nSamplesPerSec = samples_per_second;
+            wave_format.wBitsPerSample = 16;
             wave_format.nBlockAlign = (wave_format.nChannels * wave_format.wBitsPerSample) / 8;
             wave_format.nAvgBytesPerSec = wave_format.nSamplesPerSec * wave_format.nBlockAlign;
-            wave_format.wBitsPerSample = 16;
             wave_format.cbSize = 0;
 
             if (SUCCEEDED(direct_sound->SetCooperativeLevel(window, DSSCL_PRIORITY)))
@@ -101,7 +181,6 @@ internal_fn void w32_init_direct_sound(HWND window, int32_t sample_per_second, i
                 DSBUFFERDESC buffer_description = {};
                 buffer_description.dwSize = sizeof(buffer_description);
                 buffer_description.dwFlags = DSBCAPS_PRIMARYBUFFER;
-                buffer_description.dwBufferBytes = 0;
 
                 LPDIRECTSOUNDBUFFER primary_buffer;
 
@@ -109,11 +188,12 @@ internal_fn void w32_init_direct_sound(HWND window, int32_t sample_per_second, i
                 {
                     if (SUCCEEDED(primary_buffer->SetFormat(&wave_format)))
                     {
-
+                        printf("the primary sound buffer is good to go\n");
                     }
                     else
                     {
                         // TODO logging
+                        printf("there was an error setting format for primary_buffer");
                     }
                 }
                 else
@@ -131,14 +211,18 @@ internal_fn void w32_init_direct_sound(HWND window, int32_t sample_per_second, i
             buffer_description.dwBufferBytes = buffer_size;
             buffer_description.lpwfxFormat = &wave_format;
 
-            LPDIRECTSOUNDBUFFER secondary_buffer;
-            if (SUCCEEDED(direct_sound->CreateSoundBuffer(&buffer_description, &secondary_buffer, 0)))
+            // the CreateBuffer "method" here is going to load the object we want into the address
+            // at GLOBAL_SECONDARY_BUFFER, once that is loaded we will call functions from this object
+            // as if they were methods so like GLOBAL_SECONDARY_BUFFER->some_function();
+            HRESULT ds_error = direct_sound->CreateSoundBuffer(&buffer_description, &GLOBAL_SECONDARY_BUFFER, 0);
+
+            if (SUCCEEDED(ds_error))
             {
-                
+                printf("the secondary buffer was popualted!\n");
             }
             else
             {
-                            // TODO diag logs
+                printf("there was an error create secondary sound buffer");
             }
         }
         else
@@ -335,7 +419,7 @@ LRESULT CALLBACK w32_main_window_callback(
             int height = paint.rcPaint.bottom - paint.rcPaint.top;
 
             W32_window_dimensions window_dims = w32_get_window_dimensions(window);
-            w32_copy_buffer_to_window(device_context, window_dims.width, window_dims.height, offscreen_buffer);
+            w32_copy_buffer_to_window(device_context, window_dims.width, window_dims.height, GLOBAL_OFFSCREEN_BUFFER);
             
             EndPaint(window, &paint);
         } break;
@@ -360,7 +444,7 @@ int CALLBACK WinMain(
 
     WNDCLASS window_class = {};
 
-    w32_resize_dib_section(&offscreen_buffer, 1280, 720);
+    w32_resize_dib_section(&GLOBAL_OFFSCREEN_BUFFER, 1280, 720);
 
     window_class.style = CS_OWNDC|CS_HREDRAW|CS_VREDRAW;
     window_class.lpfnWndProc = w32_main_window_callback;
@@ -386,7 +470,26 @@ int CALLBACK WinMain(
         if (window_handle) 
         {
 
-            w32_init_direct_sound(window_handle, 48000, 48000*sizeof(int16_t)*2);
+            HDC device_context = GetDC(window_handle);
+
+            W32_sound_output sound_output = {};
+            //
+            sound_output.samples_per_second = 48000;
+            sound_output.tone_hz = 256; // somewhat middle c
+            sound_output.tone_volume = 3000;
+            sound_output.running_sample_index = 0;
+
+            /*
+                samples_per_second/tone_hz = samples/cycle
+
+                period by definition is the distance it takes for the wave to do an entire cycle 
+            */
+            sound_output.wave_period = sound_output.samples_per_second/sound_output.tone_hz;
+            sound_output.bytes_per_sample = sizeof(int16_t)*2; // left and right channels each 16bits
+            sound_output.secondary_buffer_size = sound_output.samples_per_second*sound_output.bytes_per_sample;
+
+
+            w32_init_direct_sound(window_handle, sound_output.samples_per_second, sound_output.secondary_buffer_size);
             running = true;
 
             MSG message_incoming;
@@ -400,7 +503,7 @@ int CALLBACK WinMain(
                     {
                         running = false;
                     }
-                    // FIXME(fixme) 
+                    // FIXME  
                     TranslateMessage(&message_incoming);
                     DispatchMessage(&message_incoming);
 
@@ -438,11 +541,45 @@ int CALLBACK WinMain(
 
                 }
 
-                render_weird_gradient(&offscreen_buffer, x_offset, y_offset);
-                HDC device_context = GetDC(window_handle);
+                render_weird_gradient(&GLOBAL_OFFSCREEN_BUFFER, x_offset, y_offset);
+
+                DWORD play_cursor = 0;
+                DWORD write_cursor = 0;
+
+                if (SUCCEEDED(GLOBAL_SECONDARY_BUFFER->GetCurrentPosition(&play_cursor, &write_cursor)))
+                {
+                    DWORD byte_to_lock = ((sound_output.running_sample_index*sound_output.bytes_per_sample) % sound_output.secondary_buffer_size); 
+                    DWORD bytes_to_write;
+                    if (byte_to_lock == play_cursor) 
+                    {
+                        if (!sound_is_playing)
+                        {
+                            bytes_to_write = sound_output.secondary_buffer_size;
+                        }
+                    }
+                    else if (byte_to_lock > play_cursor)
+                    {
+                        bytes_to_write = (sound_output.secondary_buffer_size - byte_to_lock);
+                        bytes_to_write += play_cursor;
+                    }
+                    else
+                    {
+                        bytes_to_write = play_cursor - byte_to_lock;
+                    }
+
+                    w32_fill_sound_buffer(&sound_output, byte_to_lock, bytes_to_write);
+                }
+
+                if (!sound_is_playing) 
+                {
+                    GLOBAL_SECONDARY_BUFFER->Play(0, 0, DSBPLAY_LOOPING);
+                    sound_is_playing = true;
+                }
+
+
                 
                 W32_window_dimensions window_dims = w32_get_window_dimensions(window_handle);
-                w32_copy_buffer_to_window(device_context, window_dims.width, window_dims.height, offscreen_buffer);
+                w32_copy_buffer_to_window(device_context, window_dims.width, window_dims.height, GLOBAL_OFFSCREEN_BUFFER);
                 ReleaseDC(window_handle, device_context);
 
                 // ++x_offset;
