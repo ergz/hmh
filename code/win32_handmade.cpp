@@ -488,8 +488,10 @@ int CALLBACK WinMain(
             sound_output.bytes_per_sample = sizeof(int16_t)*2; // left and right channels each 16bits
             sound_output.secondary_buffer_size = sound_output.samples_per_second*sound_output.bytes_per_sample;
 
-
             w32_init_direct_sound(window_handle, sound_output.samples_per_second, sound_output.secondary_buffer_size);
+            w32_fill_sound_buffer(&sound_output, 0, sound_output.secondary_buffer_size);
+            GLOBAL_SECONDARY_BUFFER->Play(0, 0, DSBPLAY_LOOPING);
+
             running = true;
 
             MSG message_incoming;
@@ -552,10 +554,7 @@ int CALLBACK WinMain(
                     DWORD bytes_to_write;
                     if (byte_to_lock == play_cursor) 
                     {
-                        if (!sound_is_playing)
-                        {
-                            bytes_to_write = sound_output.secondary_buffer_size;
-                        }
+                        bytes_to_write = 0;
                     }
                     else if (byte_to_lock > play_cursor)
                     {
@@ -568,16 +567,9 @@ int CALLBACK WinMain(
                     }
 
                     w32_fill_sound_buffer(&sound_output, byte_to_lock, bytes_to_write);
+
                 }
 
-                if (!sound_is_playing) 
-                {
-                    GLOBAL_SECONDARY_BUFFER->Play(0, 0, DSBPLAY_LOOPING);
-                    sound_is_playing = true;
-                }
-
-
-                
                 W32_window_dimensions window_dims = w32_get_window_dimensions(window_handle);
                 w32_copy_buffer_to_window(device_context, window_dims.width, window_dims.height, GLOBAL_OFFSCREEN_BUFFER);
                 ReleaseDC(window_handle, device_context);
